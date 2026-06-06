@@ -2,6 +2,8 @@ import base64
 import json
 import logging
 import re
+from langchain_core.globals import set_debug
+set_debug(True)
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph, MessagesState

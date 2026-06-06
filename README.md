@@ -2,26 +2,26 @@
 
 This is the backend for the "Zero-Cloud Council Prioritization Engine" developed during the NVIDIA hackathon. 
 
-The system ingests citizen reports (images) of city issues, uses a local Vision-Language Model (VLM) via Nemotron 3 Super to extract data, enriches it with local static CSV data (population density) and live API data (TfL traffic disruptions), and calculates a deterministic priority score. All AI inference runs locally without cloud APIs.
+The system ingests citizen reports (images) of city issues, uses a local Vision-Language Model (VLM) via NVIDIA NIM to extract data, enriches it with local crime/deprivation data (SQLite), population density (CSV), and live TfL traffic disruptions, and calculates a deterministic priority score. All AI inference runs locally without cloud APIs.
 
 ## Project Structure
-- `/data/`: Contains static datasets (e.g., `density.csv`).
+- `/data/`: Contains static datasets (`density.csv`, `issue_types.yaml`, `context.db`).
 - `/routers/`: FastAPI endpoint definitions.
-- `/services/`: Business logic for API integrations, Datastore lookup, Scoring, and local VLM execution.
+- `/services/`: Business logic for the agentic pipeline, context enrichment, scoring, and tool definitions.
+- `/scripts/`: Data pipeline scripts for building the context database.
+- `/docs/`: Design documents (prioritisation criteria, superpowers).
+- `/tests/`: Unit tests.
 - `main.py`: Application entry point.
+- `start_services.sh`: One-command startup for all services (persistent across SSH disconnects).
 - `requirements.txt`: Python dependencies.
 
 ---
 
-## 🛠️ Environment Setup (CRITICAL)
+## 🛠️ Environment Setup
 
-Since we are a team of 4 sharing a DGX Spark and running heavy models like **Nemotron 3 Super**, it is **critical** to use a virtual environment. This prevents system-level package conflicts and ensures everyone is running the exact same dependency versions for PyTorch, Transformers, FastAPI, etc.
+Since we are a team of 4 sharing a DGX Spark and running heavy models like **Nemotron Nano 12B VL**, it is **critical** to use a virtual environment. This prevents system-level package conflicts and ensures everyone is running the exact same dependency versions.
 
-You can set up your isolated environment using either standard `venv` or `conda` (recommended for DGX).
-
-### Option 1: Conda (Recommended for DGX)
-Conda handles complex CUDA dependencies much better than standard pip.
-
+### Conda (Recommended for DGX)
 ```bash
 # 1. Create a fresh conda environment
 conda create -n seeit-sortit python=3.10
@@ -33,63 +33,144 @@ conda activate seeit-sortit
 pip install -r requirements.txt
 ```
 
-### Option 2: Standard Python venv
-If you prefer standard python environments:
+---
 
+## 🐳 Running the Local VLM (NVIDIA NIM)
+
+The API relies on a local NVIDIA NIM container serving the **Nemotron Nano 12B VL** vision-language model. The container exposes an OpenAI-compatible API on port 8888.
+
+### Prerequisites
+1. Docker with NVIDIA Container Toolkit installed
+2. NGC API key set: `export NGC_API_KEY=<your-key>`
+3. Login to NGC registry: `echo "$NGC_API_KEY" | docker login nvcr.io --username '$oauthtoken' --password-stdin`
+
+### Manual Start (if not using `start_services.sh`)
 ```bash
-# 1. Create the virtual environment
-python3 -m venv .venv
+export LOCAL_NIM_CACHE=$HOME/.cache/nim
+mkdir -p $LOCAL_NIM_CACHE
 
-# 2. Activate the virtual environment
-source .venv/bin/activate
-
-# 3. Install requirements
-pip install -r requirements.txt
+docker run -d \
+  --name seeit-sortit-nim \
+  --gpus all \
+  --shm-size=16GB \
+  --ipc=host \
+  --privileged \
+  --restart unless-stopped \
+  -e NGC_API_KEY=$NGC_API_KEY \
+  -v "$LOCAL_NIM_CACHE:/opt/nim/.cache" \
+  -p 8888:8000 \
+  nvcr.io/nim/nvidia/nemotron-nano-12b-v2-vl:latest
 ```
 
----
-
-## 🦙 Running the Local VLM (Ollama)
-
-Before starting the API, you must ensure the local Vision-Language Model is running via Ollama. The API relies on the custom model (e.g., `my-custom-model`) served locally. 
-
-1. Ensure Ollama is installed on your machine.
-2. In a separate terminal session or screen, start the Ollama server:
-   ```bash
-   ollama serve
-   ```
-3. The server automatically binds to `http://localhost:11434`. 
-   *(Note: The API is configured via the `.env` file's `VLM_API_URL` to point to this port. If the Ollama server is killed, the API will gracefully fall back to returning mock data until you restart `ollama serve`).*
+Monitor logs: `docker logs -f seeit-sortit-nim`
 
 ---
 
-## 🚀 Running the API
+## 🚀 Quick Start (Recommended)
 
-Once your virtual environment is active, dependencies are installed, and Ollama is running in the background, you can start the local development server:
+The easiest way to start **all** services at once is with the startup script. It runs everything inside a `tmux` session that survives SSH disconnects:
 
+```bash
+conda activate seeit-sortit
+./start_services.sh
+```
+
+This will:
+1. Kill any orphaned processes on ports 8000/8888
+2. Start the NIM Docker container (detached, auto-restarts on crash)
+3. Launch `uvicorn` (API server) in tmux window 0
+4. Launch `localtunnel` (public URL) in tmux window 1
+5. Stream NIM container logs in tmux window 2
+
+### Reconnecting After SSH Disconnect
+```bash
+tmux attach -t seeit-sortit
+```
+
+Switch between windows using `Ctrl+B` then `0`, `1`, or `2`.
+
+### Manual Start (without tmux)
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-- The API will be available locally at `http://localhost:8000`, and to other devices on your network via your DGX Spark's IP address (e.g., `http://<YOUR_DGX_IP>:8000`).
-- You can access the interactive Swagger documentation and test the `/submit-report` endpoint by visiting `http://localhost:8000/docs`.
+- API docs: `http://localhost:8000/docs`
+- Public URL: `https://fixmy-council-seeit-sortit.loca.lt`
+
+---
 
 ## 🌍 Exposing the API to the Internet
 
-If you need to access the API from outside the local network (e.g., from your phone on 5G, or sharing with teammates remotely), you can easily tunnel port 8000 to the public internet using `localtunnel` (requires Node.js `npx`).
-
-1. Keep your `uvicorn` server running.
-2. In a new terminal tab on the DGX Spark, run the following command to create a tunnel with a custom, memorable URL:
-   ```bash
-   npx localtunnel --port 8000 --subdomain fixmy-council-seeit-sortit
-
-## 🧪 Testing the Endpoint
-You can test the `POST /submit-report` endpoint using the FastAPI interactive docs or `curl`:
+To access the API from outside the local network (e.g., from your phone on 5G):
 
 ```bash
-curl -X 'POST' \
-  'http://localhost:8000/submit-report' \
+npx localtunnel --port 8000 --subdomain fixmy-council-seeit-sortit
+```
+
+Public URL: `https://fixmy-council-seeit-sortit.loca.lt`
+
+---
+
+## 📡 API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/analyse-report` | **Primary endpoint.** Agentic VLM pipeline → context enrichment → priority score |
+| `POST` | `/submit-report` | Same agentic pipeline with identical scoring (legacy endpoint name) |
+| `GET` | `/health` | Health check |
+| `GET` | `/docs` | Interactive Swagger UI |
+
+### Example Request
+```bash
+curl -X POST \
+  'http://localhost:8000/analyse-report' \
   -H 'accept: application/json' \
   -H 'Content-Type: multipart/form-data' \
-  -F 'image=@/path/to/test_image.jpg'
+  -F 'image=@/path/to/test_image.jpg' \
+  -F 'text_description=Large pothole near Camden High Street'
+```
+
+### Example Response
+```json
+{
+  "status": "success",
+  "priority_score": 42350.0,
+  "priority_band": "HIGH",
+  "analysis": {
+    "issue_type": "pothole",
+    "severity": 4,
+    "location": "Camden",
+    "description": "Large pothole on residential street, approximately 30cm wide.",
+    "confidence": 0.92,
+    "raw_label": null
+  },
+  "enrichment": {
+    "tfl_delay_factor": 1.24,
+    "population_density": 10500,
+    "borough": "Camden"
+  }
+}
+```
+
+---
+
+## 🧰 Troubleshooting
+
+If you accidentally hit `Ctrl+Z` to suspend a process instead of `Ctrl+C` to cleanly stop it, the ports will remain locked in the background. This will cause `[Errno 98] Address already in use` for FastAPI, or cause Localtunnel to hold your subdomain hostage. 
+
+Run these commands to forcefully free the ports:
+
+**To forcefully kill a suspended `uvicorn` (Port 8000 in use):**
+```bash
+kill -9 $(lsof -t -i :8000)
+```
+
+**To forcefully kill suspended `localtunnel` instances:**
+```bash
+pkill -9 -f localtunnel
+```
+
+**To kill the Docker NIM container:**
+```bash
+docker rm -f seeit-sortit-nim
 ```

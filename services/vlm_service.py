@@ -1,3 +1,9 @@
+"""
+DEPRECATED — This module is superseded by services/agent_service.py which uses
+LangGraph + tool-calling for higher-quality VLM inference. Kept for reference only.
+
+All endpoints now use agent_service.run() instead of extract_issue_data_from_image().
+"""
 import os
 import json
 import base64
