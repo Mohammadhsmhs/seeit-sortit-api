@@ -26,3 +26,7 @@ miniconda.sh
 data/london/
 
 
+.gitnexus
+AGENTS.md
+
+.claude/skills/gitnexus/*
