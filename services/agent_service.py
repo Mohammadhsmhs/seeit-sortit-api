@@ -7,12 +7,24 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph, MessagesState
 from langgraph.prebuilt import ToolNode
 
-from config import get_llm
-from services.agent_tools import get_issue_taxonomy, validate_location
+from config import get_langfuse_handler, get_llm
+from services.agent_tools import (
+    get_borough_crime_and_deprivation,
+    get_issue_taxonomy,
+    get_lsoa_crime_and_deprivation,
+    list_known_boroughs,
+    validate_location,
+)
 
 logger = logging.getLogger(__name__)
 
-TOOLS = [get_issue_taxonomy, validate_location]
+TOOLS = [
+    get_issue_taxonomy,
+    validate_location,
+    list_known_boroughs,
+    get_borough_crime_and_deprivation,
+    get_lsoa_crime_and_deprivation,
+]
 
 SYSTEM_PROMPT = """You are a city issue identification agent for council reporting in London.
 
@@ -22,7 +34,11 @@ Follow these steps in order:
 1. Call get_issue_taxonomy() to retrieve the list of valid issue types.
 2. Analyze the image and text to identify the issue type, severity, and location.
 3. Call validate_location() to verify that the borough you identified is in the database.
-4. Return your final answer as a JSON object with EXACTLY these fields:
+   - If the borough is not recognised, call list_known_boroughs() to find the closest valid name.
+4. Call get_borough_crime_and_deprivation() with the borough name to retrieve crime and
+   deprivation context, and use it to inform the severity score (e.g. raise severity in
+   high-deprivation or high-crime areas where council response is more urgent).
+5. Return your final answer as a JSON object with EXACTLY these fields:
    - issue_type: slug from the taxonomy (e.g. "pothole"), or "other" if no slug matches
    - severity: integer 1-5 (1=low impact, 5=critical/urgent)
    - location: London borough name
@@ -123,6 +139,11 @@ async def run(image_bytes: bytes, text_description: str | None = None) -> dict:
         HumanMessage(content=content),
     ]
 
-    result = await _get_graph().ainvoke({"messages": messages, "issue_report": None})
+    config: dict = {}
+    handler = get_langfuse_handler()
+    if handler:
+        config["callbacks"] = [handler]
+
+    result = await _get_graph().ainvoke({"messages": messages, "issue_report": None}, config=config or None)
     issue_report = result.get("issue_report")
     return issue_report if issue_report is not None else dict(_DEFAULT_RESULT)
