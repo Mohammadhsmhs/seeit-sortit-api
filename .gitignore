@@ -22,3 +22,7 @@ miniconda.sh
 
 # Logs
 *.log
+
+data/london/
+
+
