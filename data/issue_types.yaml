@@ -1,0 +1,25 @@
+issue_types:
+  - slug: pothole
+    label: Pothole
+    severity_hint: 3
+  - slug: graffiti
+    label: Graffiti
+    severity_hint: 2
+  - slug: broken_streetlight
+    label: Broken Streetlight
+    severity_hint: 3
+  - slug: fly_tipping
+    label: Fly-tipping
+    severity_hint: 4
+  - slug: damaged_pavement
+    label: Damaged Pavement
+    severity_hint: 3
+  - slug: abandoned_vehicle
+    label: Abandoned Vehicle
+    severity_hint: 2
+  - slug: flooding
+    label: Flooding
+    severity_hint: 5
+  - slug: fallen_tree
+    label: Fallen Tree
+    severity_hint: 4
