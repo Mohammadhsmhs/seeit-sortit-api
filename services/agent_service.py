@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import re
+import threading
 from langchain_core.globals import set_debug
 set_debug(True)
 
@@ -32,14 +33,21 @@ SYSTEM_PROMPT = """You are a city issue identification agent for council reporti
 
 Analyze the provided image and optional text description to identify the city issue.
 
+If a [Confirmed GPS location] block is present in the user message, treat it as authoritative.
+Skip step 3 (validate_location / list_known_boroughs). If a confirmed LSOA code is provided,
+call get_lsoa_crime_and_deprivation with it. Otherwise call get_borough_crime_and_deprivation
+with the confirmed borough name.
+
 Follow these steps in order:
 1. Call get_issue_taxonomy() to retrieve the list of valid issue types.
 2. Analyze the image and text to identify the issue type, severity, and location.
 3. Call validate_location() to verify that the borough you identified is in the database.
    - If the borough is not recognised, call list_known_boroughs() to find the closest valid name.
+   - Skip this step if a [Confirmed GPS location] block is present.
 4. Call get_borough_crime_and_deprivation() with the borough name to retrieve crime and
    deprivation context, and use it to inform the severity score (e.g. raise severity in
    high-deprivation or high-crime areas where council response is more urgent).
+   - If a confirmed LSOA code is provided, call get_lsoa_crime_and_deprivation() instead.
 5. Return your final answer as a JSON object with EXACTLY these fields:
    - issue_type: slug from the taxonomy (e.g. "pothole"), or "other" if no slug matches
    - severity: integer 1-5 (1=low impact, 5=critical/urgent)
@@ -102,8 +110,6 @@ def _build_graph():
     return graph.compile()
 
 
-import threading
-
 _graph = None
 _graph_lock = threading.Lock()
 
@@ -117,12 +123,19 @@ def _get_graph():
     return _graph
 
 
-async def run(image_bytes: bytes, text_description: str | None = None) -> dict:
+async def run(
+    image_bytes: bytes,
+    text_description: str | None = None,
+    borough: str | None = None,
+    lsoa_code: str | None = None,
+) -> dict:
     """Run the issue-identification agent on an uploaded image.
 
     Args:
         image_bytes: Raw bytes of the uploaded image. Must be JPEG format.
         text_description: Optional free-text description from the citizen.
+        borough: Confirmed London borough name resolved from GPS coordinates.
+        lsoa_code: Confirmed LSOA code resolved from GPS coordinates.
 
     Returns:
         A dict with keys: issue_type, severity, location, description,
@@ -133,6 +146,16 @@ async def run(image_bytes: bytes, text_description: str | None = None) -> dict:
     content: list[dict] = [
         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
     ]
+
+    if borough or lsoa_code:
+        lines = ["[Confirmed GPS location]"]
+        if borough:
+            lines.append(f"Borough: {borough}")
+        if lsoa_code:
+            lines.append(f"LSOA: {lsoa_code}")
+        lines.append("Trust this data. Do not attempt to infer the location from the image.")
+        content.insert(0, {"type": "text", "text": "\n".join(lines)})
+
     if text_description:
         content.append({"type": "text", "text": text_description})
 
