@@ -1,10 +1,14 @@
+import logging
+
 from fastapi import APIRouter, File, Form, UploadFile
-from typing import Optional
 
 from services.agent_service import run
 from services.scoring_service import calculate_priority_score
 from services.tfl_service import get_tfl_delay_factor
 from services.datastore_service import get_population_density
+from services.geo_service import resolve_lsoa
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -12,16 +16,30 @@ router = APIRouter()
 @router.post("/analyse-report")
 async def analyse_report(
     image: UploadFile = File(...),
-    text_description: Optional[str] = Form(None),
+    text_description: str | None = Form(None),
+    borough: str | None = Form(None),
+    latitude: float | None = Form(None),
+    longitude: float | None = Form(None),
 ):
-    """
-    Runs the issue-identification agent on a citizen report image.
-    Returns a structured classification with issue type, severity, location,
-    description, confidence, raw label, AND a deterministic priority score
-    enriched with live TfL data, population density, and crime/deprivation context.
+    """Run the issue-identification agent on a citizen report image.
+
+    GPS fields (borough, latitude, longitude) are optional. When latitude and
+    longitude are both provided, the LSOA code is resolved via postcodes.io and
+    passed to the agent for finer-grained context. If resolution fails, the
+    request continues at borough-level precision. If no location fields are
+    provided, the agent infers the borough from the image.
     """
     image_bytes = await image.read()
-    result = await run(image_bytes, text_description)
+
+    lsoa_code: str | None = None
+    if latitude is not None and longitude is not None:
+        try:
+            lsoa_code = await resolve_lsoa(latitude, longitude)
+        except Exception:
+            logger.warning("LSOA resolution failed for (%s, %s)", latitude, longitude, exc_info=True)
+            lsoa_code = None
+
+    result = await run(image_bytes, text_description, borough, lsoa_code)
 
     # Enrich with live TfL data and population density, then score
     tfl_delay_factor = get_tfl_delay_factor()
