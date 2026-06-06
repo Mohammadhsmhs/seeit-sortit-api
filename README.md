@@ -79,12 +79,9 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 If you need to access the API from outside the local network (e.g., from your phone on 5G, or sharing with teammates remotely), you can easily tunnel port 8000 to the public internet using `localtunnel` (requires Node.js `npx`).
 
 1. Keep your `uvicorn` server running.
-2. In a new terminal tab on the DGX Spark, run:
+2. In a new terminal tab on the DGX Spark, run the following command to create a tunnel with a custom, memorable URL:
    ```bash
-   npx localtunnel --port 8000
-   ```
-3. It will generate a public URL (e.g., `https://some-random-words.loca.lt`).
-4. **Important:** When you first visit the URL in a browser, you will see a phishing protection screen. You must enter the **Endpoint IP** (the DGX Spark's external IP, e.g., `10.18.216.50`) as the password to access your server. Append `/docs` to the URL to access the Swagger UI from anywhere.
+   npx localtunnel --port 8000 --subdomain fixmy-council-seeit-sortit
 
 ## 🧪 Testing the Endpoint
 You can test the `POST /submit-report` endpoint using the FastAPI interactive docs or `curl`:
