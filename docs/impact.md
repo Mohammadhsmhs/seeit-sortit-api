@@ -38,6 +38,7 @@ priority_score = (vlm_severity × context_multiplier × population_density) / ba
 | `context_multiplier` | Crime + deprivation + TfL (0.5–2.0) | How urgent the local context makes it |
 | `population_density` | ONS density data (people/km²) | How many people are affected |
 | `baseline_cost` | Fixed repair cost lookup (£) | Normalises by effort required to fix |
+| `location_resolution` | postcodes.io (lat/lon → LSOA + borough) | Maps GPS coordinates to the local area context signals are drawn from |
 
 The `context_multiplier` is itself a weighted blend of three data sources, and the weights shift depending on the issue type:
 
