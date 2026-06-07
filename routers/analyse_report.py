@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, File, Form, UploadFile
 
 from services.agent_service import run
+from services.kanban_service import create_ticket
 from services.scoring_service import calculate_priority_score
 from services.tfl_service import get_tfl_delay_factor
 from services.datastore_service import get_population_density
@@ -65,6 +66,15 @@ async def analyse_report(
 
     if description := result.get("description"):
         result["description"] = description.replace("{priority_band}", priority_band)
+
+    issue_type_label = result.get("issue_type", "Council issue").replace("_", " ").title()
+    ticket_title = f"{issue_type_label} in {result.get('location', 'Unknown')}"
+    await create_ticket(
+        title=ticket_title,
+        priority_band=priority_band,
+        issue_type=result.get("issue_type", ""),
+        description=result.get("description"),
+    )
 
     return {
         "status": "success",
