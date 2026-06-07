@@ -63,6 +63,9 @@ async def analyse_report(
     else:
         priority_band = "LOW"
 
+    if description := result.get("description"):
+        result["description"] = description.replace("{priority_band}", priority_band)
+
     return {
         "status": "success",
         "priority_score": round(priority_score, 2),
