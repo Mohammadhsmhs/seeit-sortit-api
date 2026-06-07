@@ -23,3 +23,6 @@ issue_types:
   - slug: fallen_tree
     label: Fallen Tree
     severity_hint: 4
+  - slug: full_bin
+    label: Full Bin
+    severity_hint: 1
